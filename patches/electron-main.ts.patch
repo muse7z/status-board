@@ -1,0 +1,53 @@
+commit 8f0a24c614142dfc278c32013cdada9a50e1c54d
+Author: wenjie <wenjie@hermes.local>
+Date:   Tue Sep 1 00:00:42 2026 +0800
+
+    feat(desktop): plugin overlay window for floating dashboards
+    
+    - electron main: allow ?win=plugin popouts — frameless, always-on-top,
+      transparent plugin overlay windows (status-board floating board)
+    - renderer: isPluginOverlayWindow() + chrome-free shell for plugin routes
+    - surfaces: plugin-overlay unknown routes hold a waiting placeholder
+      instead of redirecting to chat (route hijack fix)
+    - gateway: session.usage gains cache_read/cache_write for the board
+
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index 8e35bbefd9..46d3a708eb 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -10720,6 +10720,35 @@ function wireCommonWindowHandlers(win, { zoom = true }: { zoom?: boolean } = {})
+ 
+   installContextMenuBridge(win)
+   win.webContents.setWindowOpenHandler(details => {
++    // Plugin floating overlays (e.g. status-board): a renderer asks for a
++    // chrome-free, always-on-top window — same family as the pet overlay.
++    // The window keeps a full app renderer (own gateway, own plugin door),
++    // so plugin routes render there natively.
++    if (/[?&]win=plugin(?=[&#]|$)/.test(details.url)) {
++      return {
++        action: 'allow',
++        overrideBrowserWindowOptions: {
++          frame: false,
++          transparent: true,
++          alwaysOnTop: true,
++          resizable: false,
++          minimizable: false,
++          maximizable: false,
++          fullscreenable: false,
++          skipTaskbar: !IS_MAC,
++          hasShadow: false,
++          backgroundColor: '#00000000',
++          webPreferences: {
++            preload: PRELOAD_PATH,
++            contextIsolation: true,
++            sandbox: true,
++            nodeIntegration: false,
++            backgroundThrottling: false
++          }
++        }
++      }
++    }
++
+     openExternalUrl(details.url)
+ 
+     return { action: 'deny' }

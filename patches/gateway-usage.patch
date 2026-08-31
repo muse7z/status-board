@@ -1,0 +1,26 @@
+commit 8f0a24c614142dfc278c32013cdada9a50e1c54d
+Author: wenjie <wenjie@hermes.local>
+Date:   Tue Sep 1 00:00:42 2026 +0800
+
+    feat(desktop): plugin overlay window for floating dashboards
+    
+    - electron main: allow ?win=plugin popouts — frameless, always-on-top,
+      transparent plugin overlay windows (status-board floating board)
+    - renderer: isPluginOverlayWindow() + chrome-free shell for plugin routes
+    - surfaces: plugin-overlay unknown routes hold a waiting placeholder
+      instead of redirecting to chat (route hijack fix)
+    - gateway: session.usage gains cache_read/cache_write for the board
+
+diff --git a/tui_gateway/server.py b/tui_gateway/server.py
+index 9493814bd0..3dd9143d16 100644
+--- a/tui_gateway/server.py
++++ b/tui_gateway/server.py
+@@ -5432,6 +5432,8 @@ def _get_usage(agent) -> dict:
+         "input": g("session_input_tokens", "session_prompt_tokens"),
+         "output": g("session_output_tokens", "session_completion_tokens"),
+         "reasoning": g("session_reasoning_tokens"),
++        "cache_read": g("session_cache_read_tokens"),
++        "cache_write": g("session_cache_write_tokens"),
+         "prompt": g("session_prompt_tokens"),
+         "completion": g("session_completion_tokens"),
+         "total": g("session_total_tokens"),

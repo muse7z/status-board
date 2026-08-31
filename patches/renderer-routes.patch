@@ -1,0 +1,118 @@
+commit 8f0a24c614142dfc278c32013cdada9a50e1c54d
+Author: wenjie <wenjie@hermes.local>
+Date:   Tue Sep 1 00:00:42 2026 +0800
+
+    feat(desktop): plugin overlay window for floating dashboards
+    
+    - electron main: allow ?win=plugin popouts — frameless, always-on-top,
+      transparent plugin overlay windows (status-board floating board)
+    - renderer: isPluginOverlayWindow() + chrome-free shell for plugin routes
+    - surfaces: plugin-overlay unknown routes hold a waiting placeholder
+      instead of redirecting to chat (route hijack fix)
+    - gateway: session.usage gains cache_read/cache_write for the board
+
+diff --git a/apps/desktop/src/app/contrib/controller.tsx b/apps/desktop/src/app/contrib/controller.tsx
+index 5c65fd3f19..a2f7af0a4f 100644
+--- a/apps/desktop/src/app/contrib/controller.tsx
++++ b/apps/desktop/src/app/contrib/controller.tsx
+@@ -64,7 +64,7 @@ import { $currentCwd, $selectedStoredSessionId, $sessions, $yoloActive, sessionM
+ import { watchSessionPins } from '@/store/session-pin-sync'
+ import { watchUnreadWriteGuard } from '@/store/session-unread-remote'
+ import { $statusbarVisible } from '@/store/statusbar-prefs'
+-import { isHudWindow } from '@/store/windows'
++import { isHudWindow, isPluginOverlayWindow } from '@/store/windows'
+ 
+ import type { SessionDragPayload } from '../chat/composer/inline-refs'
+ import { watchPreviewTiles } from '../chat/preview-tile'
+@@ -800,6 +800,20 @@ export function ContribController() {
+     )
+   }
+ 
++  // Plugin overlay windows host a plugin route full-bleed: the wiring
++  // (gateway, sessions, streams, submit) mounts identically, and only the
++  // shell around the routes differs — no sidebar/statusbar/titlebar, so a
++  // plugin page (e.g. status-board) owns the whole frameless window.
++  if (isPluginOverlayWindow()) {
++    return (
++      <ContribWiring>
++        <div className="flex h-screen min-h-0 w-screen bg-transparent">
++          <WiredPane part="chatRoutes" />
++        </div>
++      </ContribWiring>
++    )
++  }
++
+   return (
+     <SidebarProvider
+       className="h-screen min-h-0 flex-col bg-background"
+diff --git a/apps/desktop/src/app/contrib/surfaces.tsx b/apps/desktop/src/app/contrib/surfaces.tsx
+index d2108a751f..de844a487a 100644
+--- a/apps/desktop/src/app/contrib/surfaces.tsx
++++ b/apps/desktop/src/app/contrib/surfaces.tsx
+@@ -17,6 +17,7 @@ import { $activeConnectionId } from '@/store/connections'
+ import { $gateway } from '@/store/gateway'
+ import { $activeGatewayProfile } from '@/store/profile'
+ import { $freshDraftReady, $gatewayState } from '@/store/session'
++import { isPluginOverlayWindow } from '@/store/windows'
+ 
+ import { ChatView } from '../chat'
+ import { ChatSidebar } from '../chat/sidebar'
+@@ -186,7 +187,22 @@ export const ChatRoutesSurface = memo(function ChatRoutesSurface({
+       ))}
+       <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="new" />
+       <Route element={<LegacySessionRedirect />} path="sessions/:sessionId" />
+-      <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="*" />
++      {/* Plugin overlay windows: an unknown route is NOT a chat session — it is
++          the plugin's route still booting (the plugin registers async). Hold a
++          waiting placeholder instead of redirecting, so the plugin page takes
++          over the same hash the moment its contribution lands. */}
++      <Route
++        element={
++          isPluginOverlayWindow() ? (
++            <div className="flex h-full w-full items-center justify-center text-(--ui-text-tertiary)">
++              看板加载中…
++            </div>
++          ) : (
++            <Navigate replace to={NEW_CHAT_ROUTE} />
++          )
++        }
++        path="*"
++      />
+     </Routes>
+   )
+ })
+diff --git a/apps/desktop/src/store/windows.ts b/apps/desktop/src/store/windows.ts
+index 3549ce4186..8ae8a575fa 100644
+--- a/apps/desktop/src/store/windows.ts
++++ b/apps/desktop/src/store/windows.ts
+@@ -54,6 +54,30 @@ export function isHudWindow(): boolean {
+   return result
+ }
+ 
++// A "plugin" window hosts a plugin-contributed route full-bleed (e.g. the
++// status-board floating overlay): full app renderer with its own gateway and
++// plugin door, but the shell renders only the route table — no sidebar, no
++// titlebar clusters — so the plugin page owns the whole window.
++let pluginOverlayWindowCache: boolean | null = null
++
++export function isPluginOverlayWindow(): boolean {
++  if (pluginOverlayWindowCache !== null) {
++    return pluginOverlayWindowCache
++  }
++
++  let result = false
++
++  try {
++    result = new URLSearchParams(window.location.search).get('win') === 'plugin'
++  } catch {
++    result = false
++  }
++
++  pluginOverlayWindowCache = result
++
++  return result
++}
++
+ // A "watch" window spectates a session that is being driven elsewhere (a
+ // running subagent). It resumes lazily — the gateway registers history + a
+ // transport for the live mirror without building an agent, so opening it is
